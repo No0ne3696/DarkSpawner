@@ -7,8 +7,8 @@ local player = Players.LocalPlayer
 local cam = workspace.CurrentCamera
 
 --================ CONFIG ==================
-local HEIGHT_CAP = 25
-local PLATFORM_SPEED = 14
+local HEIGHT_CAP = 99999
+local PLATFORM_SPEED = 20
 local MAX_ESP_DISTANCE = 500
 
 --================ STATE ===================
