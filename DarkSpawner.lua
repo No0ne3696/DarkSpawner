@@ -1,252 +1,154 @@
---================ SERVICES ================
+-- SERVICES
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 
 local player = Players.LocalPlayer
-local cam = workspace.CurrentCamera
 
---================ CONFIG ==================
-local HEIGHT_CAP = 99999
-local PLATFORM_SPEED = 20
-local MAX_ESP_DISTANCE = 500
-
---================ STATE ===================
-local platform, baseY = nil, nil
-local movingUp, movingDown = false, false
-
-local ESP_PARTS = false
-local ESP_ENEMIES = false
-local ESP_PLAYERS = false
-local DIST_LIMIT = false
-
-local PART_NAMES = {}
-local espCache = {}
-
---================ GUI =====================
+--================ GUI =================
 local gui = Instance.new("ScreenGui", game.CoreGui)
+gui.Name = "MultiMenu"
 gui.ResetOnSpawn = false
 
+local menuBtn = Instance.new("TextButton", gui)
+menuBtn.Size = UDim2.fromOffset(90,32)
+menuBtn.Position = UDim2.fromOffset(20,20)
+menuBtn.Text = "MENU"
+menuBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+menuBtn.TextColor3 = Color3.new(1,1,1)
+menuBtn.Active = true
+menuBtn.Draggable = true
+
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.fromOffset(260, 460)
-frame.Position = UDim2.fromOffset(20, 60)
+frame.Position = UDim2.fromOffset(20,60)
+frame.Size = UDim2.fromOffset(220,300)
 frame.BackgroundColor3 = Color3.fromRGB(20,20,20)
+frame.Visible = false
 frame.Active = true
 frame.Draggable = true
 
 local layout = Instance.new("UIListLayout", frame)
-layout.Padding = UDim.new(0,6)
+layout.Padding = UDim.new(0,8)
 
-local function button(txt)
+menuBtn.MouseButton1Click:Connect(function()
+	frame.Visible = not frame.Visible
+end)
+
+local function makeButton(text)
 	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(1,-10,0,30)
-	b.Text = txt
-	b.Font = Enum.Font.SourceSansBold
-	b.TextSize = 13
+	b.Size = UDim2.new(1,-10,0,32)
+	b.Text = text
 	b.BackgroundColor3 = Color3.fromRGB(60,60,60)
 	b.TextColor3 = Color3.new(1,1,1)
+	b.Font = Enum.Font.SourceSansBold
+	b.TextSize = 14
 	b.Parent = frame
 	return b
 end
 
-local function textbox(ph)
-	local t = Instance.new("TextBox")
-	t.Size = UDim2.new(1,-10,0,30)
-	t.PlaceholderText = ph
-	t.TextSize = 13
-	t.ClearTextOnFocus = false
-	t.BackgroundColor3 = Color3.fromRGB(35,35,35)
-	t.TextColor3 = Color3.new(1,1,1)
-	t.Parent = frame
-	return t
-end
+--================ BUTTONS =================
+local lightBtn = makeButton("☀ Day / Fullbright / NoFog")
+local platformBtn = makeButton("⬛ Platform OFF")
+local upBtn = makeButton("⬆ UP")
+local downBtn = makeButton("⬇ DOWN")
+local hitboxBtn = makeButton("👁 Hitbox Viewer")
 
---================ FULLBRIGHT ==============
-local function fullbright()
+upBtn.Visible = false
+downBtn.Visible = false
+
+--================ FULLBRIGHT =================
+lightBtn.MouseButton1Click:Connect(function()
 	Lighting.ClockTime = 14
 	Lighting.Brightness = 5
-	Lighting.FogEnd = 1e6
+	Lighting.FogEnd = 100000
 	Lighting.Ambient = Color3.new(1,1,1)
 	Lighting.OutdoorAmbient = Color3.new(1,1,1)
-end
+end)
 
 --================ PLATFORM =================
-local function createPlatform()
-	local char = player.Character
-	if not char then return end
-	local hrp = char:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
+local platform
+local moving = 0
+local SPEED = 20
 
-	baseY = hrp.Position.Y
+local function makePlatform()
+	local char = player.Character
+	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
 
 	platform = Instance.new("Part")
-	platform.Size = Vector3.new(8, 0.7, 8) -- BIGGER
+	platform.Size = Vector3.new(50,2,50) -- 500% bigger
+	platform.Transparency = 0.75
 	platform.Anchored = true
 	platform.CanCollide = true
-	platform.CFrame = hrp.CFrame * CFrame.new(0,-3,0)
+	platform.Position = char.HumanoidRootPart.Position - Vector3.new(0,5,0)
 	platform.Parent = workspace
 end
 
 local function removePlatform()
-	if platform then platform:Destroy() end
-	platform, baseY = nil, nil
-	movingUp, movingDown = false, false
-end
-
---================ ESP CORE =================
-local function clearESP()
-	for _,v in pairs(espCache) do
-		v.h:Destroy()
-		v.b:Destroy()
+	if platform then
+		platform:Destroy()
+		platform = nil
 	end
-	espCache = {}
 end
 
-local function addESP(obj, text, color)
-	if espCache[obj] then return end
-
-	local h = Instance.new("Highlight")
-	h.FillTransparency = 1
-	h.OutlineColor = color
-	h.Adornee = obj
-	h.Parent = gui
-
-	local b = Instance.new("BillboardGui")
-	b.Size = UDim2.fromOffset(160,20)
-	b.StudsOffset = Vector3.new(0,2.2,0)
-	b.AlwaysOnTop = true
-	b.Adornee = obj
-	b.Parent = gui
-
-	local t = Instance.new("TextLabel", b)
-	t.Size = UDim2.new(1,0,1,0)
-	t.BackgroundTransparency = 1
-	t.TextStrokeTransparency = 0.4
-	t.TextColor3 = color
-	t.Font = Enum.Font.SourceSansBold
-	t.TextScaled = true
-	t.Text = text
-
-	espCache[obj] = {h=h,b=b,t=t}
-end
-
---================ UI BUTTONS ===============
-local DayBtn = button("☀ Day / Fullbright / No Fog")
-local PlatBtn = button("⬛ Platform ON / OFF")
-local UpBtn = button("⬆ HOLD UP")
-local DownBtn = button("⬇ HOLD DOWN")
-
-local PartEspBtn = button("🟢 Part ESP")
-local EnemyEspBtn = button("🔴 Enemy ESP (Auto)")
-local PlayerEspBtn = button("👤 Player ESP")
-local DistBtn = button("📏 Distance Limit")
-
-local PartBox = textbox("Part name → Enter")
-
---================ UI LOGIC =================
-DayBtn.MouseButton1Click:Connect(fullbright)
-
-PlatBtn.MouseButton1Click:Connect(function()
-	if platform then removePlatform() else createPlatform() end
-end)
-
-UpBtn.MouseButton1Down:Connect(function() movingUp = true end)
-UpBtn.MouseButton1Up:Connect(function() movingUp = false end)
-
-DownBtn.MouseButton1Down:Connect(function() movingDown = true end)
-DownBtn.MouseButton1Up:Connect(function() movingDown = false end)
-
-PartEspBtn.MouseButton1Click:Connect(function()
-	ESP_PARTS = not ESP_PARTS
-	if not ESP_PARTS then clearESP() end
-end)
-
-EnemyEspBtn.MouseButton1Click:Connect(function()
-	ESP_ENEMIES = not ESP_ENEMIES
-	if not ESP_ENEMIES then clearESP() end
-end)
-
-PlayerEspBtn.MouseButton1Click:Connect(function()
-	ESP_PLAYERS = not ESP_PLAYERS
-	if not ESP_PLAYERS then clearESP() end
-end)
-
-DistBtn.MouseButton1Click:Connect(function()
-	DIST_LIMIT = not DIST_LIMIT
-end)
-
-PartBox.FocusLost:Connect(function(e)
-	if e and PartBox.Text ~= "" then
-		PART_NAMES[PartBox.Text:lower()] = true
-		PartBox.Text = ""
+platformBtn.MouseButton1Click:Connect(function()
+	if platform then
+		removePlatform()
+		platformBtn.Text = "⬛ Platform OFF"
+		upBtn.Visible = false
+		downBtn.Visible = false
+	else
+		makePlatform()
+		platformBtn.Text = "⬛ Platform ON"
+		upBtn.Visible = true
+		downBtn.Visible = true
 	end
 end)
 
---================ MAIN LOOP ================
+upBtn.MouseButton1Down:Connect(function() moving = 1 end)
+upBtn.MouseButton1Up:Connect(function() moving = 0 end)
+downBtn.MouseButton1Down:Connect(function() moving = -1 end)
+downBtn.MouseButton1Up:Connect(function() moving = 0 end)
+
+--================ HITBOX VIEWER =================
+local hitboxOn = false
+local hitboxes = {}
+
+hitboxBtn.MouseButton1Click:Connect(function()
+	hitboxOn = not hitboxOn
+	hitboxBtn.Text = hitboxOn and "👁 Hitbox ON" or "👁 Hitbox OFF"
+
+	for _,h in pairs(hitboxes) do h:Destroy() end
+	hitboxes = {}
+end)
+
+--================ LOOP =================
 RunService.RenderStepped:Connect(function(dt)
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
 
-	-- PLATFORM MOVE (HOLD ONLY)
+	-- Platform follow + move
 	if platform then
-		local y = platform.Position.Y
-		if movingUp and y - baseY < HEIGHT_CAP then
-			platform.CFrame += Vector3.new(0, PLATFORM_SPEED*dt, 0)
-		elseif movingDown and baseY - y < HEIGHT_CAP then
-			platform.CFrame -= Vector3.new(0, PLATFORM_SPEED*dt, 0)
+		platform.Position = Vector3.new(hrp.Position.X, platform.Position.Y, hrp.Position.Z)
+
+		if moving ~= 0 then
+			platform.CFrame += Vector3.new(0, moving * SPEED * dt, 0)
 		end
 	end
 
-	local closest, cd = nil, math.huge
-
-	-- PART ESP
-	if ESP_PARTS then
-		for _,p in ipairs(workspace:GetDescendants()) do
-			if p:IsA("BasePart") and PART_NAMES[p.Name:lower()] then
-				local d = (p.Position - hrp.Position).Magnitude
-				if not DIST_LIMIT or d <= MAX_ESP_DISTANCE then
-					addESP(p, p.Name.." ["..math.floor(d).."s]", Color3.fromRGB(0,255,0))
-					if d < cd then closest, cd = p, d end
-				end
-			end
-		end
-	end
-
-	-- ENEMY ESP (AUTO)
-	if ESP_ENEMIES then
+	-- Hitbox viewer
+	if hitboxOn then
 		for _,m in ipairs(workspace:GetDescendants()) do
-			if m:IsA("Model") and m:FindFirstChildOfClass("Humanoid") then
-				if not Players:GetPlayerFromCharacter(m) then
-					local pp = m.PrimaryPart
-					if pp then
-						local d = (pp.Position - hrp.Position).Magnitude
-						if not DIST_LIMIT or d <= MAX_ESP_DISTANCE then
-							addESP(pp, m.Name.." ["..math.floor(d).."s]", Color3.fromRGB(255,0,0))
-							if d < cd then closest, cd = pp, d end
-						end
-					end
+			if m:IsA("Model") and m:FindFirstChild("Humanoid") and m.PrimaryPart then
+				if not hitboxes[m] then
+					local h = Instance.new("Highlight")
+					h.Adornee = m
+					h.FillTransparency = 1
+					h.OutlineColor = Color3.fromRGB(255,0,0)
+					h.Parent = gui
+					hitboxes[m] = h
 				end
 			end
 		end
-	end
-
-	-- PLAYER ESP
-	if ESP_PLAYERS then
-		for _,plr in ipairs(Players:GetPlayers()) do
-			if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-				local pp = plr.Character.HumanoidRootPart
-				local d = (pp.Position - hrp.Position).Magnitude
-				if not DIST_LIMIT or d <= MAX_ESP_DISTANCE then
-					addESP(pp, plr.Name.." ["..math.floor(d).."s]", Color3.fromRGB(255,0,0))
-				end
-			end
-		end
-	end
-
-	-- CLOSEST = PURPLE
-	if closest and espCache[closest] then
-		espCache[closest].h.OutlineColor = Color3.fromRGB(170,0,255)
-		espCache[closest].t.TextColor3 = Color3.fromRGB(170,0,255)
 	end
 end)
