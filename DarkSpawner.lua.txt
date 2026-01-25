@@ -152,3 +152,124 @@ RunService.RenderStepped:Connect(function(dt)
 		end
 	end
 end)
+--------------------------------------------------
+-- ADD-ON: UNIVERSAL NAME ESP (NAME + DISTANCE)
+-- Paste BELOW your existing script
+--------------------------------------------------
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- UI
+local espBtn = makeButton("👁 ESP Name (Type)")
+espBtn.TextSize = 13
+
+-- State
+local trackedNames = {}      -- name -> true
+local espObjects = {}        -- instance -> {highlight, billboard}
+
+-- Settings
+local ESP_COLOR = Color3.fromRGB(170, 0, 255) -- purple
+local UPDATE_RATE = 0.15
+local lastUpdate = 0
+
+-- Helpers
+local function getRoot(obj)
+	if obj:IsA("Model") then
+		return obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+	elseif obj:IsA("BasePart") then
+		return obj
+	end
+end
+
+local function createESP(obj)
+	if espObjects[obj] then return end
+	local root = getRoot(obj)
+	if not root then return end
+
+	-- Highlight
+	local h = Instance.new("Highlight")
+	h.FillTransparency = 1
+	h.OutlineColor = ESP_COLOR
+	h.Parent = root
+
+	-- Billboard (Name + Distance)
+	local bill = Instance.new("BillboardGui")
+	bill.Size = UDim2.fromOffset(200, 40)
+	bill.StudsOffset = Vector3.new(0, 2.5, 0)
+	bill.AlwaysOnTop = true
+	bill.Parent = root
+
+	local txt = Instance.new("TextLabel")
+	txt.Size = UDim2.fromScale(1,1)
+	txt.BackgroundTransparency = 1
+	txt.TextColor3 = ESP_COLOR
+	txt.TextStrokeTransparency = 0.4
+	txt.Font = Enum.Font.SourceSansBold
+	txt.TextScaled = true
+	txt.Parent = bill
+
+	espObjects[obj] = {
+		highlight = h,
+		label = txt
+	}
+end
+
+local function removeESP(obj)
+	local data = espObjects[obj]
+	if data then
+		data.highlight:Destroy()
+		data.label.Parent:Destroy()
+		espObjects[obj] = nil
+	end
+end
+
+-- INPUT PROMPT
+espBtn.MouseButton1Click:Connect(function()
+	local name = tostring(game:GetService("StarterGui"):PromptTextInput("ESP Name", "Enter exact name"))
+	if not name or name == "" then return end
+	name = string.lower(name)
+
+	-- Toggle
+	if trackedNames[name] then
+		trackedNames[name] = nil
+		for obj,_ in pairs(espObjects) do
+			if string.lower(obj.Name) == name then
+				removeESP(obj)
+			end
+		end
+	else
+		trackedNames[name] = true
+	end
+end)
+
+-- MAIN LOOP (FPS SAFE)
+RunService.Heartbeat:Connect(function()
+	if not next(trackedNames) then return end
+	if tick() - lastUpdate < UPDATE_RATE then return end
+	lastUpdate = tick()
+
+	local char = LocalPlayer.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	for _,obj in ipairs(workspace:GetDescendants()) do
+		if trackedNames[string.lower(obj.Name)] then
+			createESP(obj)
+		end
+	end
+
+	for obj,data in pairs(espObjects) do
+		if not obj.Parent then
+			removeESP(obj)
+		else
+			local root = getRoot(obj)
+			if root then
+				local dist = math.floor((hrp.Position - root.Position).Magnitude)
+				data.label.Text = obj.Name .. " [" .. dist .. "]"
+			end
+		end
+	end
+end)
