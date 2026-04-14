@@ -1,154 +1,237 @@
--- SERVICES
+--[[
+    UNIVERSAL MOBILE DASHBOARD - CYBER-GLITCH THEME
+    Optimized for High FPS & Mobile Touch
+]]
+
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
-local Lighting = game:GetService("Lighting")
+local VirtualUser = game:GetService("VirtualUser")
 
 local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
---================ GUI =================
-local gui = Instance.new("ScreenGui", game.CoreGui)
-gui.Name = "MultiMenu"
-gui.ResetOnSpawn = false
-
-local menuBtn = Instance.new("TextButton", gui)
-menuBtn.Size = UDim2.fromOffset(90,32)
-menuBtn.Position = UDim2.fromOffset(20,20)
-menuBtn.Text = "MENU"
-menuBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
-menuBtn.TextColor3 = Color3.new(1,1,1)
-menuBtn.Active = true
-menuBtn.Draggable = true
-
-local frame = Instance.new("Frame", gui)
-frame.Position = UDim2.fromOffset(20,60)
-frame.Size = UDim2.fromOffset(220,300)
-frame.BackgroundColor3 = Color3.fromRGB(20,20,20)
-frame.Visible = false
-frame.Active = true
-frame.Draggable = true
-
-local layout = Instance.new("UIListLayout", frame)
-layout.Padding = UDim.new(0,8)
-
-menuBtn.MouseButton1Click:Connect(function()
-	frame.Visible = not frame.Visible
-end)
-
-local function makeButton(text)
-	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(1,-10,0,32)
-	b.Text = text
-	b.BackgroundColor3 = Color3.fromRGB(60,60,60)
-	b.TextColor3 = Color3.new(1,1,1)
-	b.Font = Enum.Font.SourceSansBold
-	b.TextSize = 14
-	b.Parent = frame
-	return b
+-- // 1. Core UI Setup
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CyberHub_Mobile"
+ScreenGui.ResetOnSpawn = false
+-- Protect GUI if executor supports it, otherwise fallback to PlayerGui
+if syn and syn.protect_gui then
+    syn.protect_gui(ScreenGui)
+    ScreenGui.Parent = game:GetService("CoreGui")
+elseif gethui then
+    ScreenGui.Parent = gethui()
+else
+    ScreenGui.Parent = playerGui
 end
 
---================ BUTTONS =================
-local lightBtn = makeButton("☀ Day / Fullbright / NoFog")
-local platformBtn = makeButton("⬛ Platform OFF")
-local upBtn = makeButton("⬆ UP")
-local downBtn = makeButton("⬇ DOWN")
-local hitboxBtn = makeButton("👁 Hitbox Viewer")
+local Colors = {
+    Background = Color3.fromRGB(10, 10, 15),
+    NeonCyan = Color3.fromRGB(0, 255, 255),
+    NeonGreen = Color3.fromRGB(57, 255, 20),
+    NeonRed = Color3.fromRGB(255, 20, 60),
+    Glass = Color3.fromRGB(20, 20, 25)
+}
 
-upBtn.Visible = false
-downBtn.Visible = false
+-- // 2. FPS-Friendly Mobile Dragging Logic
+local function MakeDraggable(uiElement, dragHandle)
+    local dragging, dragStart, startPos
 
---================ FULLBRIGHT =================
-lightBtn.MouseButton1Click:Connect(function()
-	Lighting.ClockTime = 14
-	Lighting.Brightness = 5
-	Lighting.FogEnd = 100000
-	Lighting.Ambient = Color3.new(1,1,1)
-	Lighting.OutdoorAmbient = Color3.new(1,1,1)
-end)
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = uiElement.Position
 
---================ PLATFORM =================
-local platform
-local moving = 0
-local SPEED = 20
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
 
-local function makePlatform()
-	local char = player.Character
-	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-
-	platform = Instance.new("Part")
-	platform.Size = Vector3.new(50,2,50) -- 500% bigger
-	platform.Transparency = 0.75
-	platform.Anchored = true
-	platform.CanCollide = true
-	platform.Position = char.HumanoidRootPart.Position - Vector3.new(0,5,0)
-	platform.Parent = workspace
+    -- Direct coordinate updates for max FPS (No Tween Engine overhead during drag)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+            local delta = input.Position - dragStart
+            uiElement.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
 end
 
-local function removePlatform()
-	if platform then
-		platform:Destroy()
-		platform = nil
-	end
+-- // 3. Dual-Zone FAB System
+local activeFABs = {}
+
+local function SpawnFAB(modName, callback)
+    if activeFABs[modName] then
+        activeFABs[modName]:Destroy()
+        activeFABs[modName] = nil
+        return
+    end
+
+    -- Outer Handle (The Mover)
+    local FAB_Container = Instance.new("Frame")
+    FAB_Container.Size = UDim2.new(0, 70, 0, 70)
+    FAB_Container.Position = UDim2.new(0.5, -35, 0.8, -35)
+    FAB_Container.BackgroundColor3 = Colors.Glass
+    FAB_Container.BackgroundTransparency = 0.5
+    FAB_Container.Parent = ScreenGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = FAB_Container
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Colors.NeonCyan
+    stroke.Thickness = 2
+    stroke.Parent = FAB_Container
+
+    -- Inner Button (The Switch)
+    local Switch = Instance.new("TextButton")
+    Switch.Size = UDim2.new(0, 40, 0, 40)
+    Switch.Position = UDim2.new(0.5, -20, 0.5, -20)
+    Switch.BackgroundColor3 = Colors.NeonRed
+    Switch.Text = modName
+    Switch.TextScaled = true
+    Switch.TextColor3 = Color3.new(1, 1, 1)
+    Switch.Parent = FAB_Container
+    
+    local innerCorner = Instance.new("UICorner")
+    innerCorner.CornerRadius = UDim.new(1, 0)
+    innerCorner.Parent = Switch
+
+    MakeDraggable(FAB_Container, FAB_Container) 
+    activeFABs[modName] = FAB_Container
+
+    -- Toggle Logic (Tween used ONLY on tap, which is FPS safe)
+    local isOn = false
+    Switch.Activated:Connect(function()
+        isOn = not isOn
+        TweenService:Create(Switch, TweenInfo.new(0.2), {BackgroundColor3 = isOn and Colors.NeonGreen or Colors.NeonRed}):Play()
+        task.spawn(callback, isOn) 
+    end)
 end
 
-platformBtn.MouseButton1Click:Connect(function()
-	if platform then
-		removePlatform()
-		platformBtn.Text = "⬛ Platform OFF"
-		upBtn.Visible = false
-		downBtn.Visible = false
-	else
-		makePlatform()
-		platformBtn.Text = "⬛ Platform ON"
-		upBtn.Visible = true
-		downBtn.Visible = true
-	end
+-- // 4. Feature Modules
+local Modules = {}
+
+Modules.AutoSafeZone = function(state)
+    if state then
+        -- Placeholder logic: Replace "SafeZone" with the actual part name in your game
+        local safePart = workspace:FindFirstChild("SafeZone") 
+        if safePart and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = player.Character.HumanoidRootPart
+            local distance = (hrp.Position - safePart.Position).Magnitude
+            local speed = 50 
+            local timeToTravel = distance / speed
+            
+            local tweenInfo = TweenInfo.new(timeToTravel, Enum.EasingStyle.Linear)
+            local tween = TweenService:Create(hrp, tweenInfo, {CFrame = safePart.CFrame + Vector3.new(0, 5, 0)})
+            tween:Play()
+        end
+    end
+end
+
+Modules.BatterySaver = function(state)
+    local saverFrame = ScreenGui:FindFirstChild("SaverFrame")
+    
+    if state then
+        if not saverFrame then
+            saverFrame = Instance.new("Frame")
+            saverFrame.Name = "SaverFrame"
+            saverFrame.Size = UDim2.new(1, 0, 1, 0)
+            saverFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+            saverFrame.ZIndex = -1 
+            saverFrame.Parent = ScreenGui
+        end
+        saverFrame.Visible = true
+        RunService:Set3dRenderingEnabled(false) -- Massive GPU/FPS saver
+    else
+        if saverFrame then saverFrame.Visible = false end
+        RunService:Set3dRenderingEnabled(true)
+    end
+end
+
+-- Anti-AFK (Passive)
+player.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
 end)
 
-upBtn.MouseButton1Down:Connect(function() moving = 1 end)
-upBtn.MouseButton1Up:Connect(function() moving = 0 end)
-downBtn.MouseButton1Down:Connect(function() moving = -1 end)
-downBtn.MouseButton1Up:Connect(function() moving = 0 end)
+-- // 5. Master Menu Construction
+local MasterMenu = Instance.new("Frame")
+MasterMenu.Size = UDim2.new(0, 200, 0, 200)
+MasterMenu.Position = UDim2.new(0, 10, 0.3, 0)
+MasterMenu.BackgroundColor3 = Colors.Background
+MasterMenu.BackgroundTransparency = 0.2
+MasterMenu.ClipsDescendants = true
+MasterMenu.Parent = ScreenGui
 
---================ HITBOX VIEWER =================
-local hitboxOn = false
-local hitboxes = {}
+local MenuCorner = Instance.new("UICorner")
+MenuCorner.CornerRadius = UDim.new(0, 10)
+MenuCorner.Parent = MasterMenu
 
-hitboxBtn.MouseButton1Click:Connect(function()
-	hitboxOn = not hitboxOn
-	hitboxBtn.Text = hitboxOn and "👁 Hitbox ON" or "👁 Hitbox OFF"
+local MenuStroke = Instance.new("UIStroke")
+MenuStroke.Color = Colors.NeonCyan
+MenuStroke.Thickness = 1
+MenuStroke.Parent = MasterMenu
 
-	for _,h in pairs(hitboxes) do h:Destroy() end
-	hitboxes = {}
+local TopBar = Instance.new("Frame")
+TopBar.Size = UDim2.new(1, 0, 0, 30)
+TopBar.BackgroundColor3 = Colors.Glass
+TopBar.Parent = MasterMenu
+
+local TopBarText = Instance.new("TextLabel")
+TopBarText.Size = UDim2.new(1, 0, 1, 0)
+TopBarText.BackgroundTransparency = 1
+TopBarText.Text = "  CYBER HUB"
+TopBarText.TextColor3 = Colors.NeonCyan
+TopBarText.TextXAlignment = Enum.TextXAlignment.Left
+TopBarText.Font = Enum.Font.Code
+TopBarText.TextSize = 16
+TopBarText.Parent = TopBar
+
+local ModContainer = Instance.new("ScrollingFrame")
+ModContainer.Size = UDim2.new(1, 0, 1, -30)
+ModContainer.Position = UDim2.new(0, 0, 0, 30)
+ModContainer.BackgroundTransparency = 1
+ModContainer.ScrollBarThickness = 4
+ModContainer.Parent = MasterMenu
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Parent = ModContainer
+UIListLayout.Padding = UDim.new(0, 5)
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+-- Dynamic layout resizing
+UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    ModContainer.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 10)
 end)
 
---================ LOOP =================
-RunService.RenderStepped:Connect(function(dt)
-	local char = player.Character
-	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
+local function AddMenuButton(name, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.9, 0, 0, 35)
+    btn.BackgroundColor3 = Colors.Glass
+    btn.Text = name
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.Code
+    btn.TextSize = 14
+    btn.Parent = ModContainer
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 5)
+    btnCorner.Parent = btn
 
-	-- Platform follow + move
-	if platform then
-		platform.Position = Vector3.new(hrp.Position.X, platform.Position.Y, hrp.Position.Z)
+    btn.Activated:Connect(function()
+        SpawnFAB(name, callback)
+    end)
+end
 
-		if moving ~= 0 then
-			platform.CFrame += Vector3.new(0, moving * SPEED * dt, 0)
-		end
-	end
+-- // 6. Initialize Features
+AddMenuButton("Auto SafeZone", Modules.AutoSafeZone)
+AddMenuButton("Battery Saver", Modules.BatterySaver)
 
-	-- Hitbox viewer
-	if hitboxOn then
-		for _,m in ipairs(workspace:GetDescendants()) do
-			if m:IsA("Model") and m:FindFirstChild("Humanoid") and m.PrimaryPart then
-				if not hitboxes[m] then
-					local h = Instance.new("Highlight")
-					h.Adornee = m
-					h.FillTransparency = 1
-					h.OutlineColor = Color3.fromRGB(255,0,0)
-					h.Parent = gui
-					hitboxes[m] = h
-				end
-			end
-		end
-	end
-end)
+-- Make the menu itself draggable via the TopBar
+MakeDraggable(MasterMenu, TopBar)
